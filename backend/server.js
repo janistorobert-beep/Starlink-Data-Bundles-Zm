@@ -151,12 +151,13 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'starlink-zambia-backend', uptime: process.uptime() });
 });
 
-// ---------- Static site (optional) ----------
-// If HTML files live one level up from backend/, they'll be served.
-app.use(express.static(path.join(__dirname, '..')));
+// ---------- Serve the static site ----------
+// HTML files live in the SAME folder as server.js (backend/)
+app.use(express.static(__dirname));
 
+// Root → checkout page
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'index.html'));
+  res.sendFile(path.join(__dirname, 'checkout.html'));
 });
 
 // ---------- Start ----------
