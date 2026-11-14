@@ -321,7 +321,7 @@
 
     <header class="header">
         <div class="header-inner">
-            <a href="/" class="brand">
+            <a href="/checkout.html" class="brand">
                 <img src="https://starlink-datapackagesm.vercel.app/static/images/starlink_logo.png" alt="STARLINK" class="brand-logo-img">
                 <div class="brand-divider"></div>
                 <span class="brand-sub">Zambia Reseller</span>
@@ -427,9 +427,9 @@
 
     <script>
         // ============================================
-        // RAILWAY BACKEND URL
+        // SAME-ORIGIN API (empty = current domain)
         // ============================================
-        const API_BASE = 'https://starlink-data-bundles-zm-production.up.railway.app';
+        const API_BASE = '';
 
         // ============================================
         // READ PLAN FROM URL
@@ -543,7 +543,7 @@
         }
 
         doneBtn.addEventListener('click', () => {
-            window.location.href = '/';
+            window.location.href = '/checkout.html';
         });
     </script>
 </body>
